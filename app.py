@@ -33,9 +33,9 @@ except Exception as e:
 
 # --- Twilio Configuration ---
 # Using your provided Twilio credentials
-TWILIO_ACCOUNT_SID = "AC8ee66143157156f100c131654efd456f"
-TWILIO_AUTH_TOKEN = "e9e91558d3a219ec37cf59ece21d002c"
-TWILIO_PHONE_NUMBER = "+13194564570"
+TWILIO_ACCOUNT_SID = "AC2bf8d04a9f69c9134afab8b4bbaf6d57"
+TWILIO_AUTH_TOKEN = "2d3d6b958799ccff3a8767524cfed025"
+TWILIO_PHONE_NUMBER = "+18392747069"
 try:
     if 'YOUR_TWILIO' in TWILIO_ACCOUNT_SID or 'YOUR_TWILIO' in TWILIO_AUTH_TOKEN:
         print("Warning: Twilio credentials are not set. SMS functionality will be disabled.")
@@ -126,4 +126,5 @@ def send_sms():
 
 
 if __name__ == '__main__':
+
     app.run(debug=True)
