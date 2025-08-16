@@ -1,4 +1,7 @@
-flask
-ultralytics
-opencv-python
-requests
+Flask==2.3.2
+twilio==8.15.0
+ultralytics==8.0.156
+opencv-python==4.8.0.76
+python-dotenv==1.0.0
+Pillow==10.0.0
+numpy==1.27.5
