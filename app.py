@@ -32,21 +32,20 @@ except Exception as e:
     model = None
 # --- Twilio Configuration ---
 # Read Twilio credentials from environment variables
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+TWILIO_ACCOUNT_SID=AC2bf8d04a9f69c9134afab8b4bbaf6d57
+TWILIO_AUTH_TOKEN=2d3d6b958799ccff3a8767524cfed025
+TWILIO_PHONE_NUMBER=+18392747069
 
-twilio_client = None
 try:
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
+    if 'YOUR_TWILIO' in TWILIO_ACCOUNT_SID or 'YOUR_TWILIO' in TWILIO_AUTH_TOKEN:
         print("Warning: Twilio credentials are not set. SMS functionality will be disabled.")
+        twilio_client = None
     else:
         twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
         print("Twilio client initialized successfully.")
 except Exception as e:
     print(f"Error initializing Twilio client: {e}")
     twilio_client = None
-
 # --- HTML Page Routes ---
 @app.route('/')
 def index(): return render_template('index.html')
