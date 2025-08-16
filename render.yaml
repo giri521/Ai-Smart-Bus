@@ -1,0 +1,17 @@
+# render.yaml
+
+services:
+  - type: web
+    name: ai-smart-bus
+    env: python
+    region: oregon       # Change to your preferred region
+    plan: free           # Free plan
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: TWILIO_ACCOUNT_SID
+        fromSecret: TWILIO_ACCOUNT_SID
+      - key: TWILIO_AUTH_TOKEN
+        fromSecret: TWILIO_AUTH_TOKEN
+      - key: TWILIO_PHONE_NUMBER
+        fromSecret: TWILIO_PHONE_NUMBER
