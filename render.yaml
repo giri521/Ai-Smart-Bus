@@ -1,16 +1,18 @@
-# render.yaml
 services:
   - type: web
     name: ai-smart-bus
     env: python
     region: oregon
     plan: free
+    pythonVersion: 3.13
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: python app.py
     envVars:
-      - key: TWILIO_ACCOUNT_SID
-        fromSecret: TWILIO_ACCOUNT_SID
-      - key: TWILIO_AUTH_TOKEN
-        fromSecret: TWILIO_AUTH_TOKEN
-      - key: TWILIO_PHONE_NUMBER
-        fromSecret: TWILIO_PHONE_NUMBER
+      - key: FLASK_ENV
+        value: production
+      - key: FLASK_APP
+        value: app.py
+      - key: PORT
+        value: 10000
+      - key: YOLO_CONFIG_DIR
+        value: /tmp/Ultralytics
