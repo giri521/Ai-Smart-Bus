@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bus Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://api.backendless.com/sdk/js/latest/backendless.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Simple animation for loading spinner */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        .modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+        .modal-panel {
+            transition: transform 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <header class="bg-white shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-2xl font-bold text-gray-800">
+                <a href="/bus">Admin Dashboard</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <a href="/add_bus" class="text-gray-600 hover:text-blue-600 transition-colors duration-300">Add Bus</a>
+                <a href="/bus" class="text-blue-600 font-semibold border-b-2 border-blue-600">Manage Buses</a>
+                <a href="/" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors duration-300">Logout</a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Manage Buses</h1>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-600 mb-2">Total Buses</h3>
+                <p id="total-buses" class="text-4xl font-bold text-gray-800">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-600 mb-2">Active Buses</h3>
+                <p id="active-buses" class="text-4xl font-bold text-green-600">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-600 mb-2">Under Maintenance</h3>
+                <p id="maintenance-buses" class="text-4xl font-bold text-yellow-600">0</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-600 mb-2">Inactive Buses</h3>
+                <p id="inactive-buses" class="text-4xl font-bold text-red-600">0</p>
+            </div>
+        </div>
+
+        <div class="mt-10 bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold text-gray-800 mb-4">Bus Fleet</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left">
+                    <thead>
+                        <tr class="bg-gray-100">
+                            <th class="p-3">Bus Number</th>
+                            <th class="p-3">Route</th>
+                            <th class="p-3">Driver</th>
+                            <th class="p-3">Status</th>
+                            <th class="p-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bus-list-body">
+                        <tr>
+                            <td colspan="5" class="text-center p-8">
+                                <div class="flex justify-center items-center">
+                                    <div class="spinner"></div>
+                                    <p class="ml-4 text-gray-600">Loading bus data...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <div id="driver-login-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-sm modal-panel transform scale-95">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">Driver Login</h2>
+                <button id="close-login-modal-button" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="driver-login-form">
+                <input type="hidden" id="login-object-id">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Bus Number</label>
+                    <input type="text" id="login-bus-number" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 bg-gray-200 leading-tight focus:outline-none" readonly>
+                </div>
+                <div class="mb-6">
+                    <label for="login-password" class="block text-gray-700 text-sm font-bold mb-2">Password</label>
+                    <input type="password" id="login-password" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <p id="login-error-message" class="text-red-500 text-xs italic mb-4 h-4"></p>
+                <div class="flex items-center justify-end">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-300">
+                        Log In
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="status-change-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center p-4 hidden modal-backdrop">
+        <div class="bg-white rounded-lg shadow-2xl p-8 w-full max-w-sm modal-panel transform scale-95">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">Change Bus Status</h2>
+                <button id="close-status-modal-button" class="text-gray-500 hover:text-gray-800 text-3xl">&times;</button>
+            </div>
+            <form id="status-change-form">
+                <input type="hidden" id="status-object-id">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Bus Number</label>
+                    <input type="text" id="status-bus-number" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 bg-gray-200 leading-tight focus:outline-none" readonly>
+                </div>
+                <div class="mb-4">
+                    <label for="status-select" class="block text-gray-700 text-sm font-bold mb-2">New Status</label>
+                    <select id="status-select" class="shadow border rounded-lg w-full py-3 px-4 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-yellow-500">
+                        <option value="active">Active</option>
+                        <option value="maintenance">Maintenance</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div class="mb-6">
+                    <label for="status-password" class="block text-gray-700 text-sm font-bold mb-2">Enter Password to Confirm</label>
+                    <input type="password" id="status-password" class="shadow appearance-none border rounded-lg w-full py-3 px-4 text-gray-700 mb-3 leading-tight focus:outline-none focus:ring-2 focus:ring-yellow-500" required>
+                </div>
+                <p id="status-error-message" class="text-red-500 text-xs italic mb-4 h-4"></p>
+                <div class="flex items-center justify-end">
+                    <button type="submit" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-6 rounded-lg focus:outline-none focus:shadow-outline transition-colors duration-300">
+                        Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // --- Backendless Integration ---
+        const APP_ID = '7A748A24-7BDE-48E4-B794-E1F6CF1E9CF2';
+        const API_KEY = '4F8AE28B-AB86-40D7-94FB-6F1BF8C639E6';
+        Backendless.initApp(APP_ID, API_KEY);
+
+        // --- DOM Elements ---
+        const totalBusesEl = document.getElementById('total-buses');
+        const activeBusesEl = document.getElementById('active-buses');
+        const maintenanceBusesEl = document.getElementById('maintenance-buses');
+        const inactiveBusesEl = document.getElementById('inactive-buses');
+        const busListBody = document.getElementById('bus-list-body');
+        // Login Modal Elements
+        const loginModal = document.getElementById('driver-login-modal');
+        const closeLoginModalButton = document.getElementById('close-login-modal-button');
+        const loginForm = document.getElementById('driver-login-form');
+        // Status Change Modal Elements
+        const statusModal = document.getElementById('status-change-modal');
+        const closeStatusModalButton = document.getElementById('close-status-modal-button');
+        const statusForm = document.getElementById('status-change-form');
+
+        // --- Functions ---
+        const createStatusBadge = (status) => {
+            let colorClasses = 'bg-gray-200 text-gray-800'; // Default for null/undefined
+            if (status === 'active') colorClasses = 'bg-green-200 text-green-800';
+            else if (status === 'maintenance') colorClasses = 'bg-yellow-200 text-yellow-800';
+            else if (status === 'inactive') colorClasses = 'bg-red-200 text-red-800';
+            return `<span class="${colorClasses} py-1 px-3 rounded-full text-xs capitalize">${status || 'inactive'}</span>`;
+        };
+
+        const loadBuses = () => {
+            busListBody.innerHTML = `<tr><td colspan="5" class="text-center p-8"><div class="flex justify-center items-center"><div class="spinner"></div><p class="ml-4 text-gray-600">Loading bus data...</p></div></td></tr>`;
+            Backendless.Data.of("Buses").find()
+                .then(buses => {
+                    busListBody.innerHTML = '';
+                    if (buses.length === 0) {
+                        busListBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-gray-500">No buses found. <a href="/add_bus" class="text-blue-600 hover:underline">Add one now!</a></td></tr>`;
+                        return;
+                    }
+
+                    totalBusesEl.textContent = buses.length;
+                    activeBusesEl.textContent = buses.filter(b => b.status === 'active').length;
+                    maintenanceBusesEl.textContent = buses.filter(b => b.status === 'maintenance').length;
+                    inactiveBusesEl.textContent = buses.filter(b => b.status === 'inactive' || !b.status).length;
+
+                    buses.forEach(bus => {
+                        const route = bus.source && bus.destination ? `${bus.source} to ${bus.destination}` : 'Not Set';
+                        const row = `
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="p-3 font-medium">${bus.busNumber}</td>
+                                <td class="p-3">${route}</td>
+                                <td class="p-3 text-gray-600">${bus.driverName || 'N/A'}</td>
+                                <td class="p-3">${createStatusBadge(bus.status)}</td>
+                                <td class="p-3">
+                                    <div class="flex items-center space-x-2">
+                                        <button class="change-status-btn bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold py-1 px-3 rounded"
+                                            data-object-id="${bus.objectId}"
+                                            data-bus-number="${bus.busNumber}"
+                                            data-current-status="${bus.status || 'inactive'}">
+                                            Status
+                                        </button>
+                                        <button class="login-btn bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold py-1 px-3 rounded"
+                                            data-object-id="${bus.objectId}"
+                                            data-bus-number="${bus.busNumber}">
+                                            Login
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                        busListBody.innerHTML += row;
+                    });
+                })
+                .catch(error => {
+                    console.error("Error fetching buses:", error);
+                    busListBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-red-500">Error loading data: ${error.message}</td></tr>`;
+                });
+        };
+
+        // --- Modal Control Functions ---
+        const showModal = (modalElement) => {
+            modalElement.classList.remove('hidden');
+            setTimeout(() => {
+                modalElement.classList.add('opacity-100');
+                modalElement.querySelector('.modal-panel').classList.remove('scale-95');
+            }, 10);
+        };
+
+        const hideModal = (modalElement) => {
+            modalElement.classList.remove('opacity-100');
+            modalElement.querySelector('.modal-panel').classList.add('scale-95');
+            setTimeout(() => modalElement.classList.add('hidden'), 300);
+        };
+        
+        // --- Event Listeners ---
+        document.addEventListener('DOMContentLoaded', loadBuses);
+
+        busListBody.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target.classList.contains('login-btn')) {
+                document.getElementById('login-bus-number').value = target.dataset.busNumber;
+                document.getElementById('login-object-id').value = target.dataset.objectId;
+                document.getElementById('login-password').value = '';
+                document.getElementById('login-error-message').textContent = '';
+                showModal(loginModal);
+            } else if (target.classList.contains('change-status-btn')) {
+                document.getElementById('status-bus-number').value = target.dataset.busNumber;
+                document.getElementById('status-object-id').value = target.dataset.objectId;
+                document.getElementById('status-select').value = target.dataset.currentStatus;
+                document.getElementById('status-password').value = '';
+                document.getElementById('status-error-message').textContent = '';
+                showModal(statusModal);
+            }
+        });
+
+        // Login Modal Listeners
+        closeLoginModalButton.addEventListener('click', () => hideModal(loginModal));
+        loginModal.addEventListener('click', (event) => {
+            if (event.target === loginModal) hideModal(loginModal);
+        });
+
+        loginForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const objectId = document.getElementById('login-object-id').value;
+            const password = document.getElementById('login-password').value;
+            const errorMessageEl = document.getElementById('login-error-message');
+            
+            Backendless.Data.of("Buses").findById(objectId)
+                .then(bus => {
+                    if (bus.password === password) {
+                        localStorage.setItem('loggedInBus', JSON.stringify(bus));
+                        window.location.href = '/driver_dashboard';
+                    } else {
+                        errorMessageEl.textContent = 'Invalid password.';
+                    }
+                })
+                .catch(error => {
+                    console.error("Login error:", error);
+                    errorMessageEl.textContent = 'An error occurred. Please try again.';
+                });
+        });
+        
+        // Status Change Modal Listeners
+        closeStatusModalButton.addEventListener('click', () => hideModal(statusModal));
+        statusModal.addEventListener('click', (event) => {
+            if (event.target === statusModal) hideModal(statusModal);
+        });
+
+        statusForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const objectId = document.getElementById('status-object-id').value;
+            const password = document.getElementById('status-password').value;
+            const newStatus = document.getElementById('status-select').value;
+            const errorMessageEl = document.getElementById('status-error-message');
+            errorMessageEl.textContent = '';
+
+            Backendless.Data.of("Buses").findById(objectId)
+                .then(bus => {
+                    if (bus.password === password) {
+                        // Password is correct, proceed with update
+                        bus.status = newStatus;
+                        Backendless.Data.of("Buses").save(bus)
+                            .then(() => {
+                                hideModal(statusModal);
+                                loadBuses(); // Refresh the list to show the change
+                            })
+                            .catch(updateError => {
+                                console.error("Status update error:", updateError);
+                                errorMessageEl.textContent = 'Failed to save status.';
+                            });
+                    } else {
+                        errorMessageEl.textContent = 'Invalid password.';
+                    }
+                })
+                .catch(findError => {
+                    console.error("Bus lookup error:", findError);
+                    errorMessageEl.textContent = 'An error occurred. Please try again.';
+                });
+        });
+
+    </script>
+
+</body>
+</html>

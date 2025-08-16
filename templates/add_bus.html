@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add New Bus - Admin Dashboard</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- LeafletJS for Map Display -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Backendless SDK -->
+    <script src="https://api.backendless.com/sdk/js/latest/backendless.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #map {
+            height: 100%;
+            min-height: 500px; /* Ensure map has a good default height */
+            border-radius: 0.5rem;
+        }
+        /* Styles for the autosuggestion dropdown */
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid #d1d5db;
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: #fff;
+            border-radius: 0 0 0.5rem 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .autocomplete-items div {
+            padding: 0.75rem;
+            cursor: pointer;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .autocomplete-items div:last-child {
+            border-bottom: none;
+        }
+        .autocomplete-items div:hover {
+            background-color: #f3f4f6;
+        }
+        /* Simple animation for loading spinner */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        .notification {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- Header Navigation -->
+    <header class="bg-white shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="text-2xl font-bold text-gray-800"><a href="/bus">Admin Dashboard</a></div>
+            <div class="flex items-center space-x-6">
+                <a href="/add_bus" class="text-blue-600 font-semibold border-b-2 border-blue-600">Add Bus</a>
+                <a href="/bus" class="text-gray-600 hover:text-blue-600">Manage Buses</a>
+                <a href="/" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg">Logout</a>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-6 py-8">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6">Register a New Bus and Route</h1>
+
+        <form id="add-bus-form" class="bg-white p-8 rounded-lg shadow-lg w-full max-w-7xl mx-auto">
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+                <!-- Left Column: All Form Fields -->
+                <div>
+                    <!-- Section 1: Bus & Driver Details -->
+                    <section>
+                        <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-6">1. Bus & Driver Information</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label for="bus-id" class="block text-sm font-bold text-gray-700 mb-2">Bus Number</label>
+                                <input type="text" id="bus-id" placeholder="e.g., 101" class="shadow border rounded-lg w-full py-3 px-4" required>
+                            </div>
+                            <div>
+                                <label for="number-plate" class="block text-sm font-bold text-gray-700 mb-2">Number Plate</label>
+                                <input type="text" id="number-plate" placeholder="e.g., TN 59 AX 1234" class="shadow border rounded-lg w-full py-3 px-4" required>
+                            </div>
+                            <div>
+                                <label for="driver-name" class="block text-sm font-bold text-gray-700 mb-2">Driver Name</label>
+                                <input type="text" id="driver-name" placeholder="Driver's full name" class="shadow border rounded-lg w-full py-3 px-4" required>
+                            </div>
+                            <div>
+                                <label for="driver-mobile" class="block text-sm font-bold text-gray-700 mb-2">Driver Mobile</label>
+                                <input type="tel" id="driver-mobile" placeholder="10-digit mobile number" class="shadow border rounded-lg w-full py-3 px-4" required>
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="password" class="block text-sm font-bold text-gray-700 mb-2">Bus Login Password</label>
+                                <input type="password" id="password" placeholder="Create a password" class="shadow border rounded-lg w-full py-3 px-4" required>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Section 2: Route Definition -->
+                    <section class="mt-10">
+                        <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-6">2. Route Definition</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="relative">
+                                <label for="source" class="block text-sm font-bold text-gray-700 mb-2">Source</label>
+                                <input type="text" id="source" placeholder="Type a city or town name" class="shadow border rounded-lg w-full py-3 px-4" autocomplete="off" required>
+                                <div id="source-suggestions" class="autocomplete-items"></div>
+                            </div>
+                            <div class="relative">
+                                <label for="destination" class="block text-sm font-bold text-gray-700 mb-2">Destination</label>
+                                <input type="text" id="destination" placeholder="Type a city or town name" class="shadow border rounded-lg w-full py-3 px-4" autocomplete="off" required>
+                                <div id="destination-suggestions" class="autocomplete-items"></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- Section 3: Intermediate Stops -->
+                    <section class="mt-10">
+                        <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-6">3. Manage Intermediate Stops</h2>
+                        <div id="stops-management" class="hidden">
+                             <!-- Add new stop -->
+                            <div class="relative mb-4">
+                                <label for="add-stop" class="block text-sm font-bold text-gray-700 mb-2">Add a Stop Manually</label>
+                                <input type="text" id="add-stop" placeholder="Search to add or correct a stop" class="shadow border rounded-lg w-full py-3 px-4" autocomplete="off">
+                                <div id="add-stop-suggestions" class="autocomplete-items"></div>
+                                <p id="add-stop-message" class="text-xs text-gray-500 mt-1 h-4"></p>
+                            </div>
+                            <!-- List of stops -->
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-600 mb-2">Current Stops</h3>
+                                <ul id="stops-list" class="list-disc list-inside bg-gray-50 p-4 rounded-lg max-h-60 overflow-y-auto">
+                                    <!-- Stops will be populated here -->
+                                </ul>
+                            </div>
+                        </div>
+                        <p id="stops-placeholder" class="text-center text-gray-500 mt-4">Define a source and destination to manage stops.</p>
+                    </section>
+                </div>
+
+                <!-- Right Column: Map -->
+                <div class="flex flex-col h-full">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-6">Live Route Map</h2>
+                    <div id="map" class="w-full flex-grow"></div>
+                    <p id="route-message" class="text-center text-gray-500 mt-2 h-5"></p>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="mt-10 flex justify-end space-x-4 border-t pt-6">
+                <button type="button" onclick="window.location.href='/bus'" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-6 rounded-lg">Cancel</button>
+                <button type="submit" id="submit-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg flex items-center justify-center">
+                    <span id="submit-button-text">Save Bus and Route</span>
+                    <div id="submit-spinner" class="spinner hidden ml-2"></div>
+                </button>
+            </div>
+        </form>
+    </main>
+    
+    <!-- Notification Element -->
+    <div id="notification" class="notification fixed top-5 right-5 bg-green-500 text-white py-3 px-6 rounded-lg shadow-lg opacity-0 transform -translate-y-10">
+        <p id="notification-message"></p>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // IMPORTANT: Replace with your credentials
+        const BACKENDLESS_APP_ID = '7A748A24-7BDE-48E4-B794-E1F6CF1E9CF2';
+        const BACKENDLESS_API_KEY = '4F8AE28B-AB86-40D7-94FB-6F1BF8C639E6';
+        const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjFhYTUzNzY1MTE2ODFiZDRmNmJmMTMyMmM4N2FjYTJiZmRjNDQ1YTRlYjAyNTg2MzJkZjdlMjkzIiwiaCI6Im11cm11cjY0In0=';
+
+        // --- INITIALIZATION ---
+        Backendless.initApp(BACKENDLESS_APP_ID, BACKENDLESS_API_KEY);
+
+        // Map setup, centered on India
+        const map = L.map('map').setView([20.5937, 78.9629], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+        // --- STATE MANAGEMENT ---
+        let sourceCoords, destinationCoords;
+        let routeLayer;
+        let routeGeometry = []; // To store the route line for validation
+        let intermediateStops = []; // Array to hold {name, coords}
+
+        // --- DOM ELEMENTS ---
+        const sourceInput = document.getElementById('source');
+        const destinationInput = document.getElementById('destination');
+        const addStopInput = document.getElementById('add-stop');
+        const stopsList = document.getElementById('stops-list');
+        const routeMessage = document.getElementById('route-message');
+        const addStopMessage = document.getElementById('add-stop-message');
+        const stopsManagementDiv = document.getElementById('stops-management');
+        const stopsPlaceholder = document.getElementById('stops-placeholder');
+
+        // --- API HELPERS ---
+        async function getORSAutocomplete(query, layers = 'locality') {
+            if (query.length < 3) return [];
+            const url = `https://api.openrouteservice.org/geocode/autocomplete?api_key=${ORS_API_KEY}&text=${query}&boundary.country=IND&layers=${layers}`;
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                return data.features || [];
+            } catch (error) {
+                console.error('ORS Autocomplete Error:', error);
+                return [];
+            }
+        }
+
+        async function getORSRoute(start, end) {
+            routeMessage.textContent = 'Calculating route...';
+            const url = 'https://api.openrouteservice.org/v2/directions/driving-car/geojson';
+            const body = JSON.stringify({ coordinates: [start, end] });
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': ORS_API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body
+                });
+                const data = await response.json();
+                if (data.features && data.features.length > 0) {
+                    return data;
+                }
+                throw new Error('No route found');
+            } catch (error) {
+                console.error('ORS Route Error:', error);
+                routeMessage.textContent = 'Could not calculate the route.';
+                return null;
+            }
+        }
+
+        async function getPlacesAlongRoute(routeGeoJSON) {
+            routeMessage.textContent = 'Finding places along route...';
+            const url = 'https://api.openrouteservice.org/pois';
+            const body = JSON.stringify({
+                request: 'pois',
+                geometry: {
+                    geojson: routeGeoJSON,
+                    buffer: 2000 // Search within 2km on each side of the route
+                },
+                filters: {
+                    // Category IDs for City, Town, Village, Hamlet
+                    category_ids: [565, 566, 567, 568] 
+                },
+                limit: 50 // Limit the number of results to avoid clutter
+            });
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': ORS_API_KEY,
+                        'Content-Type': 'application/json'
+                    },
+                    body: body
+                });
+                const data = await response.json();
+                if (data.features && data.features.length > 0) {
+                    const placeNames = new Set();
+                    return data.features.map(feature => {
+                        const name = feature.properties.osm_tags?.name;
+                        if (name && !placeNames.has(name)) {
+                            placeNames.add(name);
+                            return {
+                                name: name,
+                                coords: feature.geometry.coordinates
+                            };
+                        }
+                        return null;
+                    }).filter(Boolean); // Filter out nulls (places without names)
+                }
+                return [];
+            } catch (error) {
+                console.error('ORS POI Error:', error);
+                routeMessage.textContent = 'Could not find places along the route.';
+                return [];
+            }
+        }
+
+
+        // --- UI & EVENT HANDLERS ---
+        function setupAutocomplete(inputEl, suggestionsEl, onSelect, layers) {
+            inputEl.addEventListener('keyup', async (e) => {
+                const suggestions = await getORSAutocomplete(e.target.value, layers);
+                suggestionsEl.innerHTML = '';
+                suggestions.forEach(feature => {
+                    const div = document.createElement('div');
+                    div.innerHTML = feature.properties.label;
+                    div.addEventListener('click', () => {
+                        inputEl.value = feature.properties.name;
+                        suggestionsEl.innerHTML = '';
+                        onSelect(feature.geometry.coordinates, feature.properties.name);
+                    });
+                    suggestionsEl.appendChild(div);
+                });
+            });
+            document.addEventListener('click', (e) => {
+                if (e.target !== inputEl) {
+                    suggestionsEl.innerHTML = '';
+                }
+            });
+        }
+
+        function onSourceSelect(coords, name) {
+            sourceCoords = coords;
+            if (destinationCoords) fetchAndDrawRoute();
+        }
+
+        function onDestinationSelect(coords, name) {
+            destinationCoords = coords;
+            if (sourceCoords) fetchAndDrawRoute();
+        }
+
+        function onAddStopSelect(coords, name) {
+            addStopInput.value = '';
+            if (!isPointOnRoute(coords, routeGeometry)) {
+                addStopMessage.textContent = 'Stop is not on the calculated route.';
+                setTimeout(() => addStopMessage.textContent = '', 3000);
+                return;
+            }
+            if (!intermediateStops.some(s => s.name === name)) {
+                intermediateStops.push({ name, coords });
+                renderStops();
+                addStopMessage.textContent = 'Stop added.';
+                setTimeout(() => addStopMessage.textContent = '', 2000);
+            } else {
+                 addStopMessage.textContent = 'Stop already in the list.';
+                 setTimeout(() => addStopMessage.textContent = '', 2000);
+            }
+        }
+
+        async function fetchAndDrawRoute() {
+            const routeData = await getORSRoute(sourceCoords, destinationCoords);
+            if (routeData) {
+                if (routeLayer) map.removeLayer(routeLayer);
+
+                const routeGeoJSON = routeData.features[0].geometry;
+                routeGeometry = routeGeoJSON.coordinates;
+                routeLayer = L.geoJSON(routeData).addTo(map);
+                map.fitBounds(routeLayer.getBounds());
+
+                const places = await getPlacesAlongRoute(routeGeoJSON);
+                
+                const allPossibleStops = [
+                    { name: sourceInput.value, coords: sourceCoords },
+                    ...places,
+                    { name: destinationInput.value, coords: destinationCoords }
+                ];
+
+                const uniqueStops = [];
+                const seenNames = new Set();
+                allPossibleStops.forEach(stop => {
+                    if (!seenNames.has(stop.name)) {
+                        seenNames.add(stop.name);
+                        uniqueStops.push(stop);
+                    }
+                });
+                intermediateStops = uniqueStops;
+
+                renderStops();
+                stopsManagementDiv.classList.remove('hidden');
+                stopsPlaceholder.classList.add('hidden');
+
+                const distance = (routeData.features[0].properties.summary.distance / 1000).toFixed(2);
+                routeMessage.textContent = `Route found: ${distance} km. ${places.length} places identified.`;
+            }
+        }
+
+        function renderStops() {
+            stopsList.innerHTML = '';
+            if (intermediateStops.length === 0) {
+                stopsList.innerHTML = '<li class="text-gray-500">No stops found. Add stops manually.</li>';
+            }
+            intermediateStops.forEach((stop, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center mb-2';
+                li.innerHTML = `<span>${stop.name}</span>
+                                <button type="button" data-index="${index}" class="remove-stop-btn text-red-500 hover:text-red-700 text-sm">Remove</button>`;
+                stopsList.appendChild(li);
+            });
+        }
+        
+        stopsList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-stop-btn')) {
+                const index = parseInt(e.target.dataset.index, 10);
+                intermediateStops.splice(index, 1);
+                renderStops();
+            }
+        });
+
+        function isPointOnRoute(pointCoords, routeCoords, tolerance = 0.02) {
+            if (!routeCoords || routeCoords.length === 0) return false;
+            return routeCoords.some(routePoint => {
+                const dist = Math.sqrt(Math.pow(pointCoords[0] - routePoint[0], 2) + Math.pow(pointCoords[1] - routePoint[1], 2));
+                return dist < tolerance;
+            });
+        }
+
+        // --- UPDATED FORM SUBMISSION LOGIC ---
+        document.getElementById('add-bus-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const submitButtonText = document.getElementById('submit-button-text');
+            const submitSpinner = document.getElementById('submit-spinner');
+            
+            submitButtonText.textContent = 'Saving...';
+            submitSpinner.classList.remove('hidden');
+            document.getElementById('submit-button').disabled = true;
+
+            // Start with the main bus details
+            const busData = {
+                busNumber: document.getElementById('bus-id').value,
+                numberPlate: document.getElementById('number-plate').value,
+                driverName: document.getElementById('driver-name').value,
+                driverMobile: document.getElementById('driver-mobile').value,
+                password: document.getElementById('password').value,
+                source: sourceInput.value,
+                destination: destinationInput.value,
+                status: 'inactive'
+            };
+
+            // Dynamically add each stop as a separate field
+            intermediateStops.forEach((stop, index) => {
+                busData[`stop${index + 1}`] = stop.name;
+            });
+            
+            try {
+                // Save the complete object to the "Buses" table
+                await Backendless.Data.of("Buses").save(busData);
+                showNotification("Bus and route saved successfully!");
+                setTimeout(() => window.location.href = '/bus', 2000);
+            } catch (error) {
+                console.error("Error saving data:", error);
+                showNotification(`Error: ${error.message}`, true);
+                submitButtonText.textContent = 'Save Bus and Route';
+                submitSpinner.classList.add('hidden');
+                document.getElementById('submit-button').disabled = false;
+            }
+        });
+        
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById('notification');
+            const notificationMessage = document.getElementById('notification-message');
+            notificationMessage.textContent = message;
+            notification.className = 'notification fixed top-5 right-5 text-white py-3 px-6 rounded-lg shadow-lg';
+            notification.classList.add(isError ? 'bg-red-500' : 'bg-green-500');
+            notification.classList.add('opacity-100', 'transform', 'translate-y-0');
+            setTimeout(() => {
+                notification.classList.remove('opacity-100', 'translate-y-0');
+            }, 4000);
+        }
+
+        setupAutocomplete(sourceInput, document.getElementById('source-suggestions'), onSourceSelect, 'locality');
+        setupAutocomplete(destinationInput, document.getElementById('destination-suggestions'), onDestinationSelect, 'locality');
+        setupAutocomplete(addStopInput, document.getElementById('add-stop-suggestions'), onAddStopSelect, 'locality,venue');
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice-Enabled Bus Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://api.backendless.com/sdk/js/latest/backendless.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        html, body { overflow: hidden; height: 100%; width: 100%; }
+        .chat-container { display: flex; flex-direction: column; height: 100%; }
+        .chat-messages { flex-grow: 1; overflow-y: auto; padding: 1rem; }
+        .message { margin-bottom: 1rem; display: flex; flex-direction: column; }
+        .bot-message .message-content { background-color: #e5e7eb; align-self: flex-start; }
+        .user-message .message-content { background-color: #3b82f6; color: white; align-self: flex-end; }
+        .message-content { padding: 0.75rem 1rem; border-radius: 0.75rem; max-width: 95%; line-height: 1.5; }
+        #map { height: 100%; width: 100%; border-radius: 0.5rem; z-index: 0; }
+        .search-again-btn { background-color: #10b981; color: white; border: none; padding: 0.5rem 1rem; border-radius: 0.5rem; margin-top: 0.75rem; cursor: pointer; font-weight: 500; }
+        .search-again-btn:hover { background-color: #059669; }
+        .details-list { list-style: none; padding: 0; margin: 0; }
+        .details-list li { padding: 0.3rem 0; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; }
+        .details-list li:last-child { border-bottom: none; }
+        .details-list li strong { margin-right: 1rem; color: #4b5563; font-size: 0.9rem; }
+        .details-list-value { text-align: right; font-weight: 500; }
+        .section-title { font-weight: 700; font-size: 1.1rem; color: #1f2937; padding-bottom: 0.5rem; margin-top: 0.75rem; margin-bottom: 0.5rem; border-bottom: 2px solid #d1d5db; }
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+        .info-card { background-color: #f3f4f6; padding: 0.75rem; border-radius: 0.5rem; text-align: center;}
+        .info-card h3 { font-weight: 600; margin-bottom: 0.25rem; font-size: 0.85rem; }
+        .info-card p { font-size: 1rem; font-weight: 700; }
+        #mic-btn {
+            background-color: #6b7280; color: white; border: none; border-radius: 0.5rem; width: 52px;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.2s;
+        }
+        #mic-btn:hover { background-color: #4b5563; }
+        #mic-btn.is-listening { background-color: #ef4444; }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="w-full h-screen max-w-screen-2xl mx-auto flex p-4 gap-4">
+        <div class="w-full md:w-1/3 lg:w-1/3 flex flex-col bg-white rounded-lg shadow-2xl chat-container">
+            <header class="bg-gray-800 text-white p-4 rounded-t-lg flex justify-between items-center flex-shrink-0">
+                <h1 class="text-xl font-bold">Bus Assistant</h1>
+                <div>
+                    <select id="language-select" class="bg-gray-700 text-white rounded-md p-1 text-sm">
+                        <option value="en-IN">English</option>
+                        <option value="hi-IN">Hindi</option>
+                        <option value="te-IN">Telugu</option>
+                        <option value="ta-IN">Tamil</option>
+                    </select>
+                </div>
+            </header>
+            <div id="chat-messages" class="chat-messages"></div>
+            <footer class="p-4 border-t flex-shrink-0">
+                <div class="flex space-x-2">
+                    <input type="text" id="user-input" placeholder="Ask or tap the mic..." class="flex-grow border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:outline-none disabled:bg-gray-200">
+                    <button id="mic-btn" title="Ask with voice">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                    </button>
+                    <button id="send-btn" class="bg-blue-600 text-white font-semibold px-4 py-3 rounded-lg hover:bg-blue-700 disabled:bg-blue-400">Send</button>
+                </div>
+            </footer>
+        </div>
+        <div id="map" class="w-full md:w-2/3 lg:w-2/3 h-[calc(100vh-2rem)] rounded-lg shadow-2xl"></div>
+    </div>
+
+
+    <script>
+        // --- CONFIGURATION ---
+        const BACKENDLESS_APP_ID = '7A748A24-7BDE-48E4-B794-E1F6CF1E9CF2';
+        const BACKENDLESS_API_KEY = '4F8AE28B-AB86-40D7-94FB-6F1BF8C639E6';
+        const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjFhYTUzNzY1MTE2ODFiZDRmNmJmMTMyMmM4N2FjYTJiZmRjNDQ1YTRlYjAyNTg2MzJkZjdlMjkzIiwiaCI6Im11cm11cjY0In0=';
+
+        // --- DOM ELEMENTS & SPEECH API SETUP ---
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const langSelect = document.getElementById('language-select');
+        const micBtn = document.getElementById('mic-btn');
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+        } else {
+            micBtn.style.display = 'none';
+        }
+        
+        // --- GLOBAL STATE ---
+        let userLocation = null;
+        let currentBusData = null;
+        let trackingInterval = null;
+        let mapInstance = null;
+        let userMarker = null;
+        let busMarker = null;
+        let stopMarker = null;
+        let routeLayers = L.layerGroup();
+        
+        // --- TRANSLATIONS ---
+        const placeNameTranslations = {
+            'Madurai': { 'hi-IN': 'मदुरै', 'te-IN': 'మధురై', 'ta-IN': 'மதுரை' },
+            'Rajapalayam': { 'hi-IN': 'राजापलायम', 'te-IN': 'రాజపాలయం', 'ta-IN': 'ராஜபாளையம்' },
+            'Srivilliputhur': { 'hi-IN': 'श्रीவில்लिपुथुर', 'te-IN': 'శ్రీవిల్లిపుత్తూరు', 'ta-IN': 'ஸ்ரீவில்லிபுத்தூர்' }
+        };
+
+        const numberWords = {
+            // English
+            'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+            // Hindi
+            'एक': '1', 'दो': '2', 'तीन': '3', 'चार': '4', 'पांच': '5', 'छह': '6', 'सात': '7', 'आठ': '8', 'नौ': '9', 'दस': '10',
+            // Telugu
+            'ఒకటి': '1', 'రెండు': '2', 'మూడు': '3', 'నాలుగు': '4', 'ఐదు': '5', 'ఆరు': '6', 'ఏడు': '7', 'ఎనిమిది': '8', 'తొమ్మిది': '9', 'పది': '10', 'వన్': '1',
+            // Tamil
+            'ஒன்று': '1', 'இரண்டு': '2', 'மூன்று': '3', 'நான்கு': '4', 'ஐந்து': '5', 'ஆறு': '6', 'ஏழு': '7', 'எட்டு': '8', 'ஒன்பது': '9', 'பத்து': '10'
+        };
+
+        const translations = {
+            'en-IN': {
+                welcome: "Welcome! Tap the mic or enter a bus number.", searching: "Hold on, I'm checking for that bus number...", no_bus: "Sorry, no bus was found with that number.", bus_found: "Great! I found the bus. Here is its live status:", direct_dist_message: "🚍...🧍The bus is approx. <strong>{distance} km</strong> away. Estimated driving time to it is <strong>{time} minutes</strong>.", bus_arriving_message: "The bus is arriving at your location now!", bus_details_title: "Bus #{busNumber} Details", intercept_plan_title: "Intercept Plan 🗺️", intercept_stop_message: "The best upcoming stop for you to catch the bus is: <strong>{stopName}</strong>", eta_user: "You to Stop", eta_bus: "Bus to Stop", search_again: "Search Again", getting_location: "Getting your location...", location_confirmed: "I've detected your location near <strong>{city}</strong>. You can now search for a bus.", location_error: "Could not get your location. Please grant permission and refresh.", no_live_location: "This bus was found, but it's not broadcasting its live location right now.", bus_not_active: "Bus {busNumber} was found, but it is currently not in service. Its status is: {status}.", last_updated: "Last Updated", driver_name: "Driver", driver_mobile: "Driver Mobile", available_seats: "Available Seats", total_seats: "Total Seats", route: "Route", number_plate: "Vehicle No.", weather: "Weather", need_bus_context: "Please find a bus first before asking about its details.", not_provided: "Not provided", sms_title: "Get SMS Updates 📱", phone_placeholder: "Enter your phone number...", sms_btn_text: "Send SMS", sending_sms: "Sending...", sms_sent: "✅ SMS sent successfully!", sms_error: "❌ Could not send SMS. Please try again.", unrecognized_bus_number: "I didn't recognize a bus number. Please try again."
+            },
+            'hi-IN': {
+                welcome: "आपका स्वागत है! बस खोजने के लिए पूछें, या बोलने के लिए माइक पर टैप करें।", searching: "रुकिए, मैं उस बस नंबर की जांच कर रहा हूं...", no_bus: "माफ़ कीजिए, मुझे उस नंबर वाली कोई बस नहीं मिली।", bus_found: "बहुत बढ़िया! मुझे बस मिल गई। यहाँ इसकी लाइव स्थिति है:", direct_dist_message: "🚍...🧍बस आपसे लगभग <strong>{distance} किमी</strong> दूर है। वहां तक ​​पहुंचने का अनुमानित समय <strong>{time} मिनट</strong> है।", bus_arriving_message: "बस अब आपके स्थान पर पहुंच रही है!", bus_details_title: "बस #{busNumber} विवरण", intercept_plan_title: "इंटरसेप्ट प्लान 🗺️", intercept_stop_message: "बस पकड़ने के लिए सबसे अच्छा स्टॉप है: <strong>{stopName}</strong>", eta_user: "आपकी स्टॉप तक", eta_bus: "बस की स्टॉप तक", search_again: "फिर से खोजें", getting_location: "आपका लोकेशन लिया जा रहा है...", location_confirmed: "मैंने आपका लोकेशन <strong>{city}</strong> के पास पाया है। अब आप बस खोज सकते हैं।", location_error: "आपका लोकेशन नहीं मिल सका। कृपया अनुमति दें और पेज को रिफ्रेश करें।", no_live_location: "यह बस मिल गई है, लेकिन अभी इसका लाइव लोकेशन प्रसारित नहीं हो रहा है।", bus_not_active: "बस {busNumber} मिल गई, लेकिन यह अभी सेवा में नहीं है। इसकी स्थिति है: {status}।", last_updated: "अंतिम अपडेट", driver_name: "ड्राइवर", driver_mobile: "ड्राइवर मोबाइल", available_seats: "उपलब्ध सीटें", total_seats: "कुल सीटें", route: "मार्ग", number_plate: "गाड़ी संख्या", weather: "मौसम", need_bus_context: "बस के विवरण के बारे में पूछने से पहले कृपया एक बस खोजें।", not_provided: "नहीं दिया गया", sms_title: "एसएमएस अपडेट प्राप्त करें 📱", phone_placeholder: "अपना फ़ोन नंबर दर्ज करें...", sms_btn_text: "एसएमएस भेजें", sending_sms: "भेज रहा है...", sms_sent: "✅ एसएमएस सफलतापूर्वक भेजा गया!", sms_error: "❌ एसएमएस नहीं भेजा जा सका। कृपया पुनः प्रयास करें।", unrecognized_bus_number: "मैंने बस नंबर नहीं पहचाना। कृपया दोबारा ప్రయత్నించండి।"
+            },
+            'te-IN': {
+                welcome: "స్వాగతం! బస్సు నంబర్‌ను నమోదు చేయండి లేదా మాట్లాడటానికి మైక్‌ను నొక్కండి.", searching: "ఒక్క నిమిషం, నేను ఆ బస్సు నంబర్ కోసం తనిఖీ చేస్తున్నాను...", no_bus: "క్షమించండి, ఆ నంబర్‌తో బస్సు కనుగొనబడలేదు.", bus_found: "గొప్పది! నేను బస్సును కనుగొన్నాను. దాని ప్రత్యక్ష స్థితి ఇక్కడ ఉంది:", direct_dist_message: "🚍...🧍బస్సు సుమారు <strong>{distance} కి.మీ</strong> దూరంలో ఉంది. దానికి డ్రైవింగ్ చేయడానికి అంచనా సమయం <strong>{time} నిమిషాలు</strong>.", bus_arriving_message: "బస్సు ఇప్పుడు మీ ప్రదేశానికి వస్తోంది!", bus_details_title: "బస్సు #{busNumber} వివరాలు", intercept_plan_title: "ఇంటర్‌సెప్ట్ ప్లాన్ 🗺️", intercept_stop_message: "మీరు బస్సును పట్టుకోవడానికి ఉత్తమమైన రాబోయే స్టాప్: <strong>{stopName}</strong>", eta_user: "మీరు స్టాప్‌కు", eta_bus: "బస్సు స్టాప్‌కు", search_again: "మళ్లీ శోధించండి", getting_location: "మీ లొకేషన్ పొందుతున్నాను...", location_confirmed: "నేను మీ లొకేషన్‌ను <strong>{city}</strong> సమీపంలో గుర్తించాను. మీరు ఇప్పుడు బస్సు కోసం శోధించవచ్చు.", location_error: "మీ లొకేషన్‌ను పొందలేకపోయాను. దయచేసి అనుమతి ఇచ్చి, రిఫ్రెష్ చేయండి.", no_live_location: "ఈ బస్సు కనుగొనబడింది, కానీ ప్రస్తుతం దాని ప్రత్యక్ష లొకేషన్‌ను ప్రసారం చేయడం లేదు.", bus_not_active: "బస్సు {busNumber} కనుగొనబడింది, కానీ ప్రస్తుతం సేవలో లేదు. దాని స్థితి: {status}.", last_updated: "చివరిగా నవీకరించబడింది", driver_name: "డ్రైవర్", driver_mobile: "డ్రైవర్ మొబైల్", available_seats: "అందుబాటులో ఉన్న సీట్లు", total_seats: "మొత్తం సీట్లు", route: "మార్గం", number_plate: "వాహనం నం.", weather: "వాతావరణం", need_bus_context: "దయచేసి దాని వివరాల గురించి అడిగే ముందు బస్సును కనుగొనండి.", not_provided: "అందించబడలేదు", sms_title: "SMS నవీకరణలను పొందండి 📱", phone_placeholder: "మీ ఫోన్ నంబర్‌ను నమోదు చేయండి...", sms_btn_text: "SMS పంపండి", sending_sms: "పంపుతోంది...", sms_sent: "✅ SMS విజయవంతంగా పంపబడింది!", sms_error: "❌ SMS పంపడంలో విఫలమైంది. దయచేసి మళ్లీ ప్రయత్నించండి.", unrecognized_bus_number: "నేను బస్సు నంబర్‌ను గుర్తించలేదు. దయచేసి మళ్లీ ప్రయత్నించండి."
+            },
+            'ta-IN': {
+                welcome: "வாருங்கள்! பேருந்து எண்ணை உள்ளிடவும் அல்லது பேச மைக்கைத் தட்டவும்.", searching: "பொறுங்கள், அந்த பேருந்து எண்ணைச் சரிபார்க்கிறேன்...", no_bus: "மன்னிக்கவும், அந்த எண்ணில் பேருந்து எதுவும் கிடைக்கவில்லை.", bus_found: "அருமை! பேருந்தைக் கண்டுபிடித்துவிட்டேன். அதன் நேரடி நிலை இங்கே:", direct_dist_message: "🚍...🧍பேருந்து சுமார் <strong>{distance} கி.மீ</strong> தொலைவில் உள்ளது. அதை அடைய மதிப்பிடப்பட்ட பயண நேரம் <strong>{time} நிமிடங்கள்</strong>.", bus_arriving_message: "பேருந்து இப்போது உங்கள் இருப்பிடத்திற்கு வந்துகொண்டிருக்கிறது!", bus_details_title: "பேருந்து #{busNumber} விவரங்கள்", intercept_plan_title: "இடைமறிப்பு திட்டம் 🗺️", intercept_stop_message: "நீங்கள் பேருந்தைப் பிடிப்பதற்கான சிறந்த வரவிருக்கும் நிறுத்தம்: <strong>{stopName}</strong>", eta_user: "நீங்கள் நிறுத்தத்திற்கு", eta_bus: "பேருந்து நிறுத்தத்திற்கு", search_again: "மீண்டும் தேடு", getting_location: "உங்கள் இருப்பிடத்தைப் பெறுகிறேன்...", location_confirmed: "உங்கள் இருப்பிடத்தை <strong>{city}</strong> அருகே கண்டறிந்துள்ளேன். நீங்கள் இப்போது பேருந்தைத் தேடலாம்.", location_error: "உங்கள் இருப்பிடத்தைப் பெற முடியவில்லை. தயவுசெய்து அனுமதியளித்து புதுப்பிக்கவும்.", no_live_location: "இந்த பேருந்து கிடைத்தது, ஆனால் அது தற்போது அதன் நேரடி இருப்பிடத்தை ஒளிபரப்பவில்லை.", bus_not_active: "பேருந்து {busNumber} கிடைத்தது, ஆனால் அது தற்போது சேவையில் இல்லை. அதன் நிலை: {status}.", last_updated: "கடைசியாகப் புதுப்பிக்கப்பட்டது", driver_name: "ஓட்டுநர்", driver_mobile: "ஓட்டுநர் மொபைల్", available_seats: "கிடைக்கும் இருக்கைகள்", total_seats: "மொத்த இருக்கைகள்", route: "பாதை", number_plate: "வாகன எண்", weather: "வானிலை", need_bus_context: "அதன் விவரங்களைக் கேட்பதற்கு முன், ஒரு பேருந்தைக் கண்டுபிடிக்கவும்.", not_provided: "வழங்கப்படவில்லை", sms_title: "SMS அறிவிப்புகளைப் பெறவும் 📱", phone_placeholder: "உங்கள் தொலைபேசி எண்ணை உள்ளிடவும்...", sms_btn_text: "SMS அனுப்பு", sending_sms: "அனுப்புகிறது...", sms_sent: "✅ SMS வெற்றிகரமாக அனுப்பப்பட்டது!", sms_error: "❌ SMS அனுப்ப முடியவில்லை. மீண்டும் முயற்சிக்கவும்.", unrecognized_bus_number: "நான் பேருந்து எண்ணை அடையாளம் காணவில்லை. மீண்டும் முயற்சிக்கவும்."
+            }
+        };
+        
+        // --- INITIALIZATION & EVENT LISTENERS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMap();
+            startNewSearch();
+        });
+        sendBtn.addEventListener('click', () => handleUserInput());
+        userInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') handleUserInput(); });
+        langSelect.addEventListener('change', startNewSearch);
+
+        chatMessages.addEventListener('click', (e) => {
+            if (e.target.classList.contains('search-again-btn')) startNewSearch();
+            if (e.target.id === 'sms-btn') handleSendSms();
+        });
+        
+        if (micBtn) {
+            micBtn.addEventListener('click', () => {
+                recognition.lang = langSelect.value;
+                recognition.start();
+            });
+            recognition.onstart = () => micBtn.classList.add('is-listening');
+            recognition.onend = () => micBtn.classList.remove('is-listening');
+            recognition.onerror = (event) => micBtn.classList.remove('is-listening');
+            recognition.onresult = (event) => {
+                userInput.value = event.results[0][0].transcript;
+                handleUserInput();
+            };
+        }
+
+        function initializeMap() {
+            mapInstance = L.map('map').setView([20.5937, 78.9629], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapInstance);
+            routeLayers.addTo(mapInstance);
+        }
+
+        // --- CHAT FLOW ---
+        function startNewSearch() {
+            if (trackingInterval) clearInterval(trackingInterval);
+            chatMessages.innerHTML = '';
+            currentBusData = null;
+            Backendless.initApp(BACKENDLESS_APP_ID, BACKENDLESS_API_KEY);
+            const lang = translations[langSelect.value] || translations['en-IN'];
+            addBotMessage(lang.welcome);
+            toggleInput(true);
+            addBotMessage(lang.getting_location);
+            getCurrentLocation().then(async (loc) => {
+                userLocation = loc;
+                updateUserMarker();
+                const cityName = await getCityName(userLocation);
+                const displayMessage = lang.location_confirmed.replace('{city}', cityName || 'your area');
+                addBotMessage(displayMessage, false, cityName || '');
+                toggleInput(false);
+            }).catch(err => {
+                addBotMessage(lang.location_error)
+            });
+        }
+
+        async function handleUserInput() {
+            const messageText = userInput.value.trim();
+            if (!messageText) return;
+            
+            addUserMessage(messageText);
+            userInput.value = '';
+            toggleInput(true);
+            await parseAndExecute(messageText);
+            toggleInput(false);
+        }
+        
+        function convertSpokenNumberToDigit(text) {
+            const words = text.split(/(\s+)/); 
+            const convertedWords = words.map(word => {
+                const cleanWord = word.toLowerCase().replace(/[.,!?]/g, '');
+                return numberWords[cleanWord] || word;
+            });
+            return convertedWords.join('');
+        }
+        
+        async function parseAndExecute(text) {
+            const lang = translations[langSelect.value] || translations['en-IN'];
+            let processedText = convertSpokenNumberToDigit(text);
+
+            const weatherKeywords = ['weather', 'मौसम', 'వాతావరణం', 'வானிலை'];
+            const seatKeywords = ['seat', 'सीट', 'సీటు', 'இடம்', 'இருக்கைகள்'];
+
+            if (weatherKeywords.some(kw => text.toLowerCase().includes(kw))) {
+                if (currentBusData) {
+                    const weatherInfo = currentBusData.weather ? `<strong>${lang.weather}:</strong> ${currentBusData.weather}` : `<strong>${lang.weather}:</strong> ${lang.not_provided}`;
+                    addBotMessage(weatherInfo);
+                } else { addBotMessage(lang.need_bus_context); }
+            } else if (seatKeywords.some(kw => text.toLowerCase().includes(kw))) {
+                if (currentBusData) {
+                    let seatText = `<strong>${lang.available_seats}:</strong> `;
+                    seatText += (currentBusData.availableSeats !== null && currentBusData.availableSeats !== undefined) ? currentBusData.availableSeats : lang.not_provided;
+                    addBotMessage(seatText);
+                } else { addBotMessage(lang.need_bus_context); }
+            } else {
+                const busNumberMatch = processedText.match(/\d+/);
+                if (busNumberMatch) {
+                    await findAndDisplayBus(busNumberMatch[0]);
+                } else {
+                    addBotMessage(lang.unrecognized_bus_number);
+                }
+            }
+        }
+        
+        async function findAndDisplayBus(busNumber) {
+            const lang = translations[langSelect.value] || translations['en-IN'];
+            addBotMessage(lang.searching);
+            if (!userLocation) {
+                addBotMessage(lang.location_error);
+                addBotMessage(`<button class="search-again-btn">${lang.search_again}</button>`);
+                return;
+            }
+            try {
+                const queryBuilder = Backendless.DataQueryBuilder.create().setWhereClause(`busNumber = '${busNumber}'`);
+                const buses = await Backendless.Data.of("Buses").find(queryBuilder);
+                
+                if (buses.length === 0) {
+                    addBotMessage(lang.no_bus);
+                } else {
+                    const bus = buses[0];
+                    if (bus.status === 'active') {
+                        currentBusData = bus;
+                        if (!currentBusData.currentLat || !currentBusData.currentLon) {
+                            addBotMessage(lang.no_live_location);
+                        } else {
+                            addBotMessage(lang.bus_found);
+                            await displayBusInfo(currentBusData);
+                        }
+                    } else {
+                        addBotMessage(lang.bus_not_active.replace('{busNumber}', bus.busNumber).replace('{status}', bus.status));
+                    }
+                }
+            } catch (error) {
+                console.error("Error finding bus:", error);
+            } finally {
+                addBotMessage(`<button class="search-again-btn">${lang.search_again}</button>`);
+            }
+        }
+
+        async function displayBusInfo(bus) {
+            const messageId = `bus-info-${bus.objectId}`;
+            if (document.getElementById(messageId)) document.getElementById(messageId).remove();
+            
+            const interceptStop = await findBestInterceptStop(bus, userLocation);
+            
+            const messageContainer = document.createElement('div');
+            messageContainer.id = messageId;
+            messageContainer.innerHTML = `<div class="direct-dist-container"></div><div class="bus-details-container"></div><div class="intercept-plan-container"></div><div class="notification-container"></div>`;
+            addBotMessage(messageContainer.outerHTML, true); // Don't speak the container
+            
+            updateLiveElements(bus, interceptStop, messageId);
+            updateMap(bus, interceptStop);
+
+            if (trackingInterval) clearInterval(trackingInterval);
+            trackingInterval = setInterval(async () => {
+                const latestBus = await Backendless.Data.of("Buses").findById(bus.objectId);
+                if (latestBus) {
+                    currentBusData = latestBus;
+                    const newInterceptStop = await findBestInterceptStop(latestBus, userLocation);
+                    updateLiveElements(latestBus, newInterceptStop, messageId);
+                    updateMap(latestBus, newInterceptStop);
+                }
+            }, 30000);
+        }
+
+        async function handleSendSms() {
+            const lang = translations[langSelect.value] || translations['en-IN'];
+            const phoneInput = document.getElementById('phone-input');
+            const smsBtn = document.getElementById('sms-btn');
+            const statusDiv = document.getElementById('sms-status');
+        
+            const phoneNumber = phoneInput.value.trim();
+            if (!phoneNumber || !/^\+?[1-9]\d{1,14}$/.test(phoneNumber)) {
+                alert('Please enter a valid phone number, including the country code (e.g., +919876543210).');
+                phoneInput.focus();
+                return;
+            }
+        
+            if (!currentBusData) {
+                statusDiv.textContent = 'Error: Bus data not found.';
+                return;
+            }
+        
+            smsBtn.disabled = true;
+            smsBtn.textContent = lang.sending_sms;
+            statusDiv.textContent = '';
+        
+            const busDetails = {
+                busNumber: currentBusData.busNumber,
+                route: `${currentBusData.source || '?'} -> ${currentBusData.destination || '?'}`,
+                availableSeats: currentBusData.availableSeats,
+                weather: currentBusData.weather,
+                lat: currentBusData.currentLat,
+                lon: currentBusData.currentLon
+            };
+
+            const langCode = langSelect.value;
+        
+            try {
+                const response = await fetch('/send_sms', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        phone_number: phoneNumber,
+                        bus_details: busDetails,
+                        language: langCode
+                    })
+                });
+        
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    statusDiv.innerHTML = `<span style="color: green;">${lang.sms_sent}</span>`;
+                } else {
+                    statusDiv.innerHTML = `<span style="color: red;">${lang.sms_error} ${result.error || ''}</span>`;
+                }
+            } catch (error) {
+                console.error("Fetch API Error:", error);
+                statusDiv.innerHTML = `<span style="color: red;">${lang.sms_error}</span>`;
+            } finally {
+                smsBtn.disabled = false;
+                smsBtn.textContent = lang.sms_btn_text;
+            }
+        }
+
+        // --- UI & MAP UPDATES ---
+        function getTranslatedRoute(source, dest, lang) {
+            if (!source || !dest) return '';
+            const tSource = (placeNameTranslations[source] && placeNameTranslations[source][lang]) || source;
+            const tDest = (placeNameTranslations[dest] && placeNameTranslations[dest][lang]) || dest;
+            return `${tSource} to ${tDest}`;
+        }
+        
+        async function updateLiveElements(bus, interceptStop, messageId) {
+            const lang = translations[langSelect.value] || translations['en-IN'];
+            const infoEl = document.getElementById(messageId);
+            if (!infoEl) return;
+            
+            const directDistContainer = infoEl.querySelector('.direct-dist-container');
+            const directRoute = await getORSRoute([userLocation.longitude, userLocation.latitude], [bus.currentLon, bus.currentLat]);
+            if (directRoute && directRoute.features) {
+                const summary = directRoute.features[0].properties.summary;
+                const distKm = (summary.distance / 1000);
+                const timeMin = Math.round(summary.duration / 60);
+                directDistContainer.innerHTML = distKm < 0.15 ? lang.bus_arriving_message : lang.direct_dist_message.replace('{distance}', distKm.toFixed(1)).replace('{time}', timeMin);
+            }
+
+            const detailsContainer = infoEl.querySelector('.bus-details-container');
+            const translatedRoute = getTranslatedRoute(bus.source, bus.destination, langSelect.value);
+            let detailsHtml = `<div class="section-title">${lang.bus_details_title.replace('{busNumber}', bus.busNumber)}</div><ul class="details-list">`;
+            detailsHtml += `<li><strong>${lang.route}:</strong> <span class="details-list-value">${translatedRoute}</span></li>`;
+            if (bus.numberPlate) detailsHtml += `<li><strong>${lang.number_plate}:</strong> <span class="details-list-value">${bus.numberPlate}</span></li>`;
+            if (bus.driverName) detailsHtml += `<li><strong>${lang.driver_name}:</strong> <span class="details-list-value">${bus.driverName}</span></li>`;
+            if (bus.driverMobile) detailsHtml += `<li><strong>${lang.driver_mobile}:</strong> <span class="details-list-value">${bus.driverMobile}</span></li>`;
+            if (bus.availableSeats !== null && bus.availableSeats !== undefined) detailsHtml += `<li><strong>${lang.available_seats}:</strong> <span class="details-list-value">${bus.availableSeats}</span></li>`;
+            if (bus.totalSeats) detailsHtml += `<li><strong>${lang.total_seats}:</strong> <span class="details-list-value">${bus.totalSeats}</span></li>`;
+            if (bus.weather) detailsHtml += `<li><strong>${lang.weather}:</strong> <span class="details-list-value">${bus.weather}</span></li>`;
+            detailsHtml += `<li><strong>${lang.last_updated}:</strong> <span class="details-list-value">${formatTimeAgo(bus.updated)}</span></li>`;
+            detailsHtml += `</ul>`;
+            detailsContainer.innerHTML = detailsHtml;
+
+            const interceptContainer = infoEl.querySelector('.intercept-plan-container');
+            if (interceptStop) {
+                const etaUser = await getORSRoute([userLocation.longitude, userLocation.latitude], interceptStop.coords);
+                const etaBus = await getORSRoute([bus.currentLon, bus.currentLat], interceptStop.coords);
+                let interceptHtml = `<div class="section-title">${lang.intercept_plan_title}</div><p>${lang.intercept_stop_message.replace('{stopName}', interceptStop.name)}</p><div class="info-grid">`;
+                interceptHtml += `<div class="info-card"><h3>📍 ${lang.eta_user}</h3><p>${etaUser ? Math.round(etaUser.features[0].properties.summary.duration / 60) + ' min' : '--'}</p></div>`;
+                interceptHtml += `<div class="info-card"><h3>🚌 ${lang.eta_bus}</h3><p>${etaBus ? Math.round(etaBus.features[0].properties.summary.duration / 60) + ' min' : '--'}</p></div>`;
+                interceptHtml += `</div>`;
+                interceptContainer.innerHTML = interceptHtml;
+            } else { interceptContainer.innerHTML = ''; }
+
+            const notificationContainer = infoEl.querySelector('.notification-container');
+            if (notificationContainer) {
+                notificationContainer.innerHTML = `
+                    <div class="section-title">${lang.sms_title}</div>
+                    <div class="flex space-x-2 my-2">
+                        <input type="tel" id="phone-input" placeholder="${lang.phone_placeholder}" class="flex-grow border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                        <button id="sms-btn" class="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg hover:bg-green-700">${lang.sms_btn_text}</button>
+                    </div>
+                    <div id="sms-status" class="text-sm mt-1"></div>
+                `;
+            }
+            
+            speak(infoEl.innerHTML, langSelect.value);
+        }
+        
+        // --- UTILITY FUNCTIONS ---
+        let voices = [];
+        function populateVoiceList() {
+            if(typeof speechSynthesis === 'undefined') {
+                return;
+            }
+            voices = speechSynthesis.getVoices();
+        }
+        populateVoiceList();
+        if (typeof speechSynthesis !== 'undefined' && speechSynthesis.onvoiceschanged !== undefined) {
+            speechSynthesis.onvoiceschanged = populateVoiceList;
+        }
+
+        function speak(htmlContent, lang) {
+            if (!htmlContent || !('speechSynthesis' in window)) return;
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = htmlContent;
+            const cleanText = tempDiv.textContent || tempDiv.innerText || "";
+            if (!cleanText.trim()) return;
+
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(cleanText.trim());
+            utterance.lang = lang;
+            
+            const desiredVoice = voices.find(voice => voice.lang === lang);
+            if (desiredVoice) {
+                utterance.voice = desiredVoice;
+            } else {
+                console.warn(`No voice found for language: ${lang}. Using browser default.`);
+            }
+            
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function addBotMessage(content, isHtmlContainer = false, textToSpeak = null) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message bot-message`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.innerHTML = content;
+            msgDiv.appendChild(contentDiv);
+            chatMessages.appendChild(msgDiv);
+            scrollToBottom();
+            
+            const speechText = textToSpeak !== null ? textToSpeak : content;
+            if (!isHtmlContainer) {
+                speak(speechText, langSelect.value);
+            }
+        }
+        
+        function updateMap(bus, stop) { if (!mapInstance) return; routeLayers.clearLayers(); const busLatLng = [bus.currentLat, bus.currentLon]; if (busMarker) busMarker.setLatLng(busLatLng); else busMarker = L.marker(busLatLng, { icon: L.icon({ iconUrl: 'https://img.icons8.com/plasticine/100/000000/bus.png', iconSize: [40, 40] }) }).addTo(mapInstance).bindPopup(`Bus #${bus.busNumber}`); const bounds = [busLatLng, [userLocation.latitude, userLocation.longitude]]; if (stop) { const stopLatLng = [stop.coords[1], stop.coords[0]]; if (stopMarker) stopMarker.setLatLng(stopLatLng); else stopMarker = L.marker(stopLatLng).addTo(mapInstance); stopMarker.setPopupContent(`Intercept at: ${stop.name}`); bounds.push(stopLatLng); drawRouteOnMap([userLocation.longitude, userLocation.latitude], stop.coords, '#3b82f6'); drawRouteOnMap([bus.currentLon, bus.currentLat], stop.coords, '#10b981'); } mapInstance.fitBounds(bounds, { padding: [50, 50] }); }
+        function updateUserMarker() { if (!mapInstance || !userLocation) return; const userLatLng = [userLocation.latitude, userLocation.longitude]; if (userMarker) userMarker.setLatLng(userLatLng); else userMarker = L.marker(userLatLng, { icon: L.icon({ iconUrl: 'https://img.icons8.com/color/48/000000/marker.png', iconSize: [40, 40] }) }).addTo(mapInstance).bindPopup("Your Location"); mapInstance.setView(userLatLng, 13); }
+        async function findBestInterceptStop(bus, userLoc) { let stopNames = [bus.source, ...Array.from({ length: 10 }, (_, i) => bus[`stop${i+1}`]), bus.destination].filter(Boolean); const geocodePromises = stopNames.map(name => getORSGeocode(name)); let allStops = (await Promise.all(geocodePromises)).map((r, i) => r.length > 0 ? { name: stopNames[i], coords: r[0].geometry.coordinates, originalIndex: i } : null).filter(Boolean); if (allStops.length === 0) return null; const busToStopsResults = await Promise.all(allStops.map(stop => getORSRoute([bus.currentLon, bus.currentLat], stop.coords))); let minEta = Infinity, nextStopIndex = -1; busToStopsResults.forEach((route, index) => { if (route && route.features) { const duration = route.features[0].properties.summary.duration; if (duration < minEta) { minEta = duration; nextStopIndex = allStops[index].originalIndex; } } }); const upcomingStops = allStops.filter(stop => stop.originalIndex >= nextStopIndex); if (upcomingStops.length === 0) return allStops.find(s => s.name === bus.destination) || null; const userToUpcomingStopsResults = await Promise.all(upcomingStops.map(stop => getORSRoute([userLoc.longitude, userLoc.latitude], stop.coords))); let bestStop = null, minUserDist = Infinity; userToUpcomingStopsResults.forEach((route, index) => { if (route && route.features) { const distance = route.features[0].properties.summary.distance; if (distance < minUserDist) { minUserDist = distance; bestStop = upcomingStops[index]; } } }); return bestStop; }
+        async function getCityName(coords) { if (!ORS_API_KEY || ORS_API_KEY.includes('YOUR_')) return null; const url = `https://api.openrouteservice.org/geocode/reverse?api_key=${ORS_API_KEY}&point.lon=${coords.longitude}&point.lat=${coords.latitude}`; try { const response = await fetch(url); const data = await response.json(); if (data.features && data.features.length > 0) { return data.features[0].properties.locality || data.features[0].properties.county; } return null; } catch (e) { return null; } }
+        async function getORSGeocode(placeName) { if (!ORS_API_KEY || ORS_API_KEY.includes('YOUR_')) return []; try { return (await (await fetch(`https://api.openrouteservice.org/geocode/search?api_key=${ORS_API_KEY}&text=${encodeURIComponent(placeName)}&boundary.country=IND`)).json()).features || []; } catch (e) { return []; } }
+        async function getORSRoute(start, end) { if (!ORS_API_KEY || ORS_API_KEY.includes('YOUR_')) return null; try { const r = await fetch(`https://api.openrouteservice.org/v2/directions/driving-car/geojson`, { method: 'POST', headers: { 'Authorization': ORS_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ coordinates: [start, end] }) }); return await r.json(); } catch (e) { return null; } }
+        async function drawRouteOnMap(start, end, color) { const d = await getORSRoute(start, end); if (d && d.features) L.geoJSON(d, { style: { color, weight: 5, opacity: 0.7 } }).addTo(routeLayers); }
+        function addUserMessage(text) { const m = document.createElement('div'); m.className = `message user-message`; m.innerHTML = `<div class="message-content">${text}</div>`; chatMessages.appendChild(m); scrollToBottom(); }
+        function toggleInput(disabled) { userInput.disabled = disabled; sendBtn.disabled = disabled; }
+        function scrollToBottom() { chatMessages.scrollTop = chatMessages.scrollHeight; }
+        function formatTimeAgo(timestamp) { if (!timestamp) return '...'; const s = Math.floor((new Date() - new Date(timestamp)) / 1000); if (s < 30) return `just now`; if (s < 60) return `${s}s ago`; const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`; const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`; return `${Math.floor(h / 24)}d ago`; }
+        function getCurrentLocation() { return new Promise((resolve, reject) => { if (!navigator.geolocation) { reject(new Error("Geolocation is not supported.")); } navigator.geolocation.getCurrentPosition(p => resolve(p.coords), reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }); }); }
+    </script>
+</body>
+</html>

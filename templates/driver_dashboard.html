@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Driver Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script src="https://api.backendless.com/sdk/js/latest/backendless.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        #map { height: 400px; border-radius: 0.5rem; }
+        #live-video {
+            width: 100%;
+            height: auto;
+            border-radius: 0.5rem;
+            transform: scaleX(-1); /* Mirror view for user-facing camera */
+        }
+        .data-card {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <header class="bg-white shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div id="welcome-message" class="text-xl md:text-2xl font-bold text-gray-800">
+                Driver Dashboard
+            </div>
+            <a href="/" id="logout-button" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-lg">Logout</a>
+        </nav>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 space-y-6">
+                <div class="data-card">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-4">Live Map & Route</h2>
+                    <div id="map"></div>
+                </div>
+                <div class="data-card">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-4">Scheduled Stops</h2>
+                    <ul id="stops-list" class="list-none space-y-2"></ul>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                <div class="data-card">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-4">Live Status</h2>
+                    <div class="space-y-3">
+                        <div id="weather-info"><strong>Weather:</strong> Fetching...</div>
+                        <div id="location-info"><strong>Location:</strong> Initializing...</div>
+                        <div id="destination-info" class="text-purple-600 font-semibold"><strong>Destination:</strong> Calculating...</div>
+                        <div id="eta-info" class="text-purple-600"><strong>ETA:</strong> Calculating...</div>
+                        <div id="upcoming-stop-info" class="text-indigo-600 font-bold"></div>
+                        <div id="update-status" class="text-sm text-gray-500">Awaiting first update...</div>
+                    </div>
+                </div>
+                <div class="data-card">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-4">Crowd Detection</h2>
+                    <video id="live-video" autoplay muted playsinline></video>
+                    <p id="model-status" class="text-center text-gray-500 mt-2">Initializing camera...</p>
+                </div>
+                <div class="data-card">
+                    <h2 class="text-xl font-semibold text-gray-700 border-b pb-2 mb-4">Seat Availability</h2>
+                    <div class="space-y-4">
+                            <div>
+                                <label for="total-seats" class="block text-sm font-medium text-gray-700">Total Seats (Capacity):</label>
+                                <input type="number" id="total-seats" value="50" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2">
+                            </div>
+                        <div class="text-lg"><strong>AI Detected Crowd:</strong> <span id="crowd-count" class="font-bold text-blue-600">0</span></div>
+                        <div>
+                            <label for="available-seats" class="block text-sm font-bold text-gray-700">Calculated Available Seats:</label>
+                             <input type="number" id="available-seats" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-lg p-2 font-bold bg-gray-200 cursor-not-allowed" readonly>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- CONFIGURATION ---
+        const BACKENDLESS_APP_ID = '7A748A24-7BDE-48E4-B794-E1F6CF1E9CF2';
+        const BACKENDLESS_API_KEY = '4F8AE28B-AB86-40D7-94FB-6F1BF8C639E6';
+        const ORS_API_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6IjFhYTUzNzY1MTE2ODFiZDRmNmJmMTMyMmM4N2FjYTJiZmRjNDQ1YTRlYjAyNTg2MzJkZjdlMjkzIiwiaCI6Im11cm11cjY0In0=';
+        const OPENWEATHER_API_KEY = '1d77de94d48b21f123aa67a8cd3e70f4';
+        const ARRIVAL_THRESHOLD_METERS = 150; // How close to a stop to consider it "visited"
+
+        // --- DOM ELEMENTS ---
+        const welcomeMessageEl = document.getElementById('welcome-message');
+        const mapEl = document.getElementById('map');
+        const stopsListEl = document.getElementById('stops-list');
+        const weatherInfoEl = document.getElementById('weather-info');
+        const locationInfoEl = document.getElementById('location-info');
+        const updateStatusEl = document.getElementById('update-status');
+        const destinationInfoEl = document.getElementById('destination-info');
+        const etaInfoEl = document.getElementById('eta-info');
+        const upcomingStopInfoEl = document.getElementById('upcoming-stop-info');
+        const videoEl = document.getElementById('live-video');
+        const modelStatusEl = document.getElementById('model-status');
+        const totalSeatsInput = document.getElementById('total-seats');
+        const crowdCountEl = document.getElementById('crowd-count');
+        const availableSeatsInput = document.getElementById('available-seats');
+
+        // --- STATE ---
+        let map, busMarker, routePolyline;
+        let loggedInBus = null;
+        let lastUpdateTime = null;
+        let scheduledStops = []; 
+        let isUpdatingRoute = false; 
+
+        // --- NEW HELPER FUNCTION ---
+        function updateAvailableSeats() {
+            const total = parseInt(totalSeatsInput.value, 10) || 0;
+            const crowd = parseInt(crowdCountEl.textContent, 10) || 0;
+            const available = Math.max(0, total - crowd); // Ensures the result isn't negative
+            availableSeatsInput.value = available;
+        }
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            Backendless.initApp(BACKENDLESS_APP_ID, BACKENDLESS_API_KEY);
+            
+            const busString = localStorage.getItem('loggedInBus');
+            if (!busString) { window.location.href = '/'; return; }
+            loggedInBus = JSON.parse(busString);
+            
+            welcomeMessageEl.textContent = `Welcome, Driver of Bus #${loggedInBus.busNumber}`;
+            totalSeatsInput.value = loggedInBus.totalSeats || 50;
+            
+            // MODIFIED: Setup calculation logic
+            updateAvailableSeats(); // Initial calculation
+            totalSeatsInput.addEventListener('input', updateAvailableSeats); // Recalculate when total seats are edited
+
+            initializeMap();
+            await getScheduledStops(); 
+            startLocationTracking();
+            await setupCamera();
+            
+            setInterval(updateBackendless, 30000);
+            setInterval(analyzeFrame, 5000);
+        });
+
+        // --- MAP & ROUTING ---
+        function initializeMap() {
+            map = L.map('map').setView([20.5937, 78.9629], 5);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+            const busIcon = L.icon({
+                iconUrl: 'https://img.icons8.com/plasticine/100/000000/bus.png',
+                iconSize: [40, 40], iconAnchor: [20, 20], popupAnchor: [0, -20]
+            });
+            busMarker = L.marker([0, 0], { title: "My Location", icon: busIcon }).addTo(map);
+        }
+        
+        async function getScheduledStops() {
+            const query = new Backendless.DataQueryBuilder().setWhereClause(`objectId = '${loggedInBus.objectId}'`);
+            try {
+                const busData = (await Backendless.Data.of("Buses").find(query))[0];
+                if (!busData.source || !busData.destination) return;
+
+                const stopNames = [busData.source];
+                for (let i = 1; i <= 50; i++) {
+                    if (busData[`stop${i}`]) stopNames.push(busData[`stop${i}`]); else break;
+                }
+                stopNames.push(busData.destination);
+
+                const geocodePromises = stopNames.map(name => getORSGeocode(name));
+                const geocodedResults = await Promise.all(geocodePromises);
+
+                scheduledStops = geocodedResults.map((features, index) => {
+                    if (features && features.length > 0) {
+                        return { name: stopNames[index], coords: features[0].geometry.coordinates, visited: false };
+                    }
+                    return null;
+                }).filter(Boolean);
+
+                if (scheduledStops.length > 0) {
+                        map.setView([scheduledStops[0].coords[1], scheduledStops[0].coords[0]], 13);
+                }
+                
+                renderStopsList();
+            } catch (error) {
+                console.error("Error fetching stop details:", error);
+                stopsListEl.innerHTML = '<li>Error loading route details. Check API key and stop names.</li>';
+            }
+        }
+
+        async function getORSGeocode(placeName) {
+            const url = `https://api.openrouteservice.org/geocode/search?api_key=${ORS_API_KEY}&text=${placeName}&boundary.country=IND`;
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Geocoding failed for " + placeName);
+            return (await response.json()).features || [];
+        }
+
+        async function getORSRoute(coordinates) {
+            const url = `https://api.openrouteservice.org/v2/directions/driving-car/geojson`;
+            const body = JSON.stringify({ coordinates: coordinates });
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': ORS_API_KEY, 'Content-Type': 'application/json' },
+                body: body
+            });
+            if (!response.ok) throw new Error(`Route calculation failed: ${response.statusText}`);
+            return await response.json();
+        }
+
+        // --- REAL-TIME TRACKING ---
+        function startLocationTracking() {
+            if (!navigator.geolocation) {
+                locationInfoEl.innerHTML = `<strong>Location is not supported by your browser.</strong>`;
+                return;
+            }
+            navigator.geolocation.watchPosition(handleLocationUpdate, handleLocationError, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+        }
+        
+        function handleLocationUpdate(position) {
+            const { latitude, longitude } = position.coords;
+            locationInfoEl.innerHTML = `<strong>Location:</strong> ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
+            busMarker.setLatLng([latitude, longitude]);
+            getWeather(latitude, longitude);
+            
+            if (scheduledStops.length > 0 && !isUpdatingRoute) {
+                updateDynamicRoute(latitude, longitude);
+            }
+        }
+
+        function handleLocationError(error) {
+            locationInfoEl.innerHTML = `<strong>Location Error:</strong> ${error.message}`;
+        }
+        
+        // --- DYNAMIC ROUTE LOGIC ---
+        async function updateDynamicRoute(currentLat, currentLon) {
+            isUpdatingRoute = true;
+            try {
+                const remainingStops = scheduledStops.filter(stop => !stop.visited);
+                if (remainingStops.length === 0) {
+                    destinationInfoEl.innerHTML = `<strong>Destination:</strong> ✅ Arrived!`;
+                    etaInfoEl.textContent = 'Route complete!';
+                    upcomingStopInfoEl.textContent = '';
+                    if (routePolyline) map.removeLayer(routePolyline);
+                    isUpdatingRoute = false;
+                    return;
+                }
+                const nextStop = remainingStops[0];
+                const destination = scheduledStops[scheduledStops.length - 1];
+                const straightLineDistanceToNextStop = calculateDistance(currentLat, currentLon, nextStop.coords[1], nextStop.coords[0]);
+                if (straightLineDistanceToNextStop < (ARRIVAL_THRESHOLD_METERS / 1000)) {
+                    nextStop.visited = true;
+                    renderStopsList();
+                    isUpdatingRoute = false;
+                    updateDynamicRoute(currentLat, currentLon); 
+                    return;
+                }
+                const waypoints = [ [currentLon, currentLat], destination.coords ];
+                const routeData = await getORSRoute(waypoints);
+                const routeCoords = routeData.features[0].geometry.coordinates;
+                let closestStopOnRoute = null;
+                let minDistanceToRoute = Infinity;
+                for (const stop of remainingStops) {
+                    for (const routePoint of routeCoords) {
+                        const dist = calculateDistance(stop.coords[1], stop.coords[0], routePoint[1], routePoint[0]);
+                        if (dist < minDistanceToRoute) {
+                            minDistanceToRoute = dist;
+                            closestStopOnRoute = stop;
+                        }
+                    }
+                }
+                const summary = routeData.features[0].properties.summary;
+                destinationInfoEl.innerHTML = `<strong>Destination:</strong> ${(summary.distance / 1000).toFixed(2)} km away`;
+                etaInfoEl.innerHTML = `<strong>ETA:</strong> ${formatDuration(summary.duration)}`;
+                if (closestStopOnRoute && minDistanceToRoute < 0.5) { 
+                    upcomingStopInfoEl.innerHTML = `Next stop on route: <strong>${closestStopOnRoute.name}</strong>`;
+                } else {
+                    upcomingStopInfoEl.textContent = 'Driving directly to destination...';
+                }
+                if (routePolyline) map.removeLayer(routePolyline);
+                routePolyline = L.geoJSON(routeData, { style: { color: '#4f46e5', weight: 5 } }).addTo(map);
+            } catch (error) {
+                console.error("Failed to update route:", error);
+                upcomingStopInfoEl.textContent = "Could not calculate route.";
+            } finally {
+                isUpdatingRoute = false;
+            }
+        }
+        
+        // --- UI & HELPER FUNCTIONS ---
+        function renderStopsList() {
+            stopsListEl.innerHTML = '';
+            scheduledStops.forEach((stop, index) => {
+                const li = document.createElement('li');
+                li.className = 'p-2 rounded-md transition-colors duration-300';
+                if(stop.visited) {
+                    li.classList.add('bg-green-100', 'font-bold', 'line-through');
+                }
+                let tag = (index === 0) ? ' (Source)' : (index === scheduledStops.length - 1) ? ' (Destination)' : '';
+                li.textContent = `📍 ${stop.name}${tag}`;
+                stopsListEl.appendChild(li);
+            });
+        }
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the Earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = 0.5 - Math.cos(dLat)/2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * (1 - Math.cos(dLon))/2;
+            return R * 2 * Math.asin(Math.sqrt(a)); // Distance in km
+        }
+
+        function formatDuration(totalSeconds) {
+            if (isNaN(totalSeconds)) return 'N/A';
+            if (totalSeconds < 60) return `< 1 min`;
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.round((totalSeconds % 3600) / 60);
+            let durationString = '';
+            if (hours > 0) durationString += `${hours}h `;
+            if (minutes > 0) durationString += `${minutes}m`;
+            return durationString.trim();
+        }
+        
+        async function getWeather(lat, lon) {
+            try {
+                const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.weather) {
+                    weatherInfoEl.innerHTML = `<strong>Weather:</strong> ${data.main.temp}°C, ${data.weather[0].description}`;
+                }
+            } catch (error) {
+                weatherInfoEl.innerHTML = `<strong>Weather:</strong> Could not fetch.`;
+            }
+        }
+
+        // --- CAMERA & SERVER-SIDE AI ---
+        async function setupCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+                videoEl.srcObject = stream;
+                modelStatusEl.textContent = "Camera feed active.";
+            } catch (err) {
+                modelStatusEl.textContent = "Could not access camera."; console.error(err);
+            }
+        }
+
+        async function analyzeFrame() {
+            if (!videoEl.srcObject || videoEl.paused || videoEl.ended || videoEl.readyState < 4) return;
+            modelStatusEl.textContent = "Analyzing frame...";
+            const canvas = document.createElement('canvas');
+            canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
+            const context = canvas.getContext('2d');
+            context.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+            const imageDataUrl = canvas.toDataURL('image/jpeg');
+            try {
+                const response = await fetch('/detect_crowd', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ image: imageDataUrl })
+                });
+                if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
+                const result = await response.json();
+                if (result.crowd_count !== undefined) {
+                    crowdCountEl.textContent = result.crowd_count;
+                    // MODIFIED: Recalculate available seats after getting new crowd count
+                    updateAvailableSeats();
+                    modelStatusEl.textContent = "Analysis complete.";
+                } else {
+                    modelStatusEl.textContent = "Analysis failed: Invalid response.";
+                }
+            } catch (error) {
+                console.error("Error calling detection API:", error);
+                modelStatusEl.textContent = "API call failed. Is backend server running?";
+            }
+        }
+
+        // --- BACKENDLESS UPDATES ---
+        async function updateBackendless() {
+            try {
+                const position = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {enableHighAccuracy: true, timeout: 5000}));
+                const { latitude, longitude } = position.coords;
+                
+                const dataToUpdate = {
+                    objectId: loggedInBus.objectId,
+                    currentLat: latitude,
+                    currentLon: longitude,
+                    weather: weatherInfoEl.innerText.replace('Weather: ', ''),
+                    availableSeats: parseInt(availableSeatsInput.value, 10),
+                    totalSeats: parseInt(totalSeatsInput.value, 10)
+                };
+
+                await Backendless.Data.of("Buses").save(dataToUpdate);
+                lastUpdateTime = new Date();
+                updateStatusEl.textContent = `Backend updated at ${lastUpdateTime.toLocaleTimeString()}`;
+            } catch (error) {
+                console.error("Backendless update failed:", error);
+                updateStatusEl.textContent = "Backend update failed.";
+            }
+        }
+        
+        // --- LOGOUT ---
+        document.getElementById('logout-button').addEventListener('click', (e) => {
+            e.preventDefault();
+            if (videoEl.srcObject) {
+                videoEl.srcObject.getTracks().forEach(track => track.stop());
+            }
+            localStorage.removeItem('loggedInBus');
+            window.location.href = '/';
+        });
+    </script>
+</body>
+</html>
