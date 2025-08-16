@@ -1,11 +1,10 @@
 # render.yaml
-
 services:
   - type: web
     name: ai-smart-bus
     env: python
-    region: oregon       # Change to your preferred region
-    plan: free           # Free plan
+    region: oregon
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
