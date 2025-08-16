@@ -30,17 +30,16 @@ try:
 except Exception as e:
     print(f"Error loading YOLO model: {e}")
     model = None
-
 # --- Twilio Configuration ---
-# Using your provided Twilio credentials
 # Read Twilio credentials from environment variables
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+
+twilio_client = None
 try:
-    if 'YOUR_TWILIO' in TWILIO_ACCOUNT_SID or 'YOUR_TWILIO' in TWILIO_AUTH_TOKEN:
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
         print("Warning: Twilio credentials are not set. SMS functionality will be disabled.")
-        twilio_client = None
     else:
         twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
         print("Twilio client initialized successfully.")
@@ -129,4 +128,5 @@ def send_sms():
 if __name__ == '__main__':
 
     app.run(debug=True)
+
 
