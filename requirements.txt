@@ -1,6 +1,4 @@
-Flask==2.3.2
-twilio==8.14.0
-ultralytics==8.0.147
-opencv-python==4.8.1.78
-numpy==1.26.5
-Pillow==10.1.0
+flask
+ultralytics
+opencv-python
+requests
