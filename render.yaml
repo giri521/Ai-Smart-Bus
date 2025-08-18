@@ -2,17 +2,7 @@ services:
   - type: web
     name: ai-smart-bus
     env: python
-    region: oregon
     plan: free
-    pythonVersion: 3.13
-    buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
-    envVars:
-      - key: FLASK_ENV
-        value: production
-      - key: FLASK_APP
-        value: app.py
-      - key: PORT
-        value: 10000
-      - key: YOLO_CONFIG_DIR
-        value: /tmp/Ultralytics
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    autoDeploy: true
