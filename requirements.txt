@@ -1,5 +1,7 @@
-flask
+Flask
+gunicorn
+twilio
+requests
 ultralytics
 opencv-python
-requests
-
+numpy
